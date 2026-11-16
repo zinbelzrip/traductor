@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Traductor de voz</title>
+<style>
+:root{--bg:#faf8f5;--card:#fff;--text:#1d1b19;--muted:#6d675f;--accent:#c2410c;--accent-text:#fff;--border:#e4ded5;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171513;--card:#211e1b;--text:#f1ede8;--muted:#a39b91;--accent:#fb923c;--accent-text:#1d1b19;--border:#38332e;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171513;--card:#211e1b;--text:#f1ede8;--muted:#a39b91;--accent:#fb923c;--accent-text:#1d1b19;--border:#38332e;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:560px;padding:20px 16px 32px}
+h1{font-size:1.3rem;margin:0 0 16px}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+select{flex:1;min-width:0;padding:11px 8px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-weight:600}
+#swap{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:1.2rem;cursor:pointer;flex:none}
+textarea,.out{width:100%;min-height:110px;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-size:1.05rem;resize:vertical}
+.out{white-space:pre-wrap;margin-top:12px}
+.out.empty{color:var(--muted)}
+.row{display:flex;gap:8px;margin-top:12px}
+button.main{flex:1;padding:14px 8px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-text);font-size:1rem;font-weight:700;cursor:pointer}
+button.main:disabled{opacity:.6}
+button.sec{padding:14px 18px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:1rem;cursor:pointer}
+.note{min-height:1.2em;margin-top:12px;color:var(--accent);font-weight:600;font-size:.9rem}
+.turn{border:1px solid var(--border);background:var(--card);border-radius:12px;padding:10px 14px;margin-top:10px}
+.turn small{display:block;color:var(--muted)}
+.turn b{display:block;font-size:1.1rem;margin-top:4px}
+.auto{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted);font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Traductor de voz</h1>
+<div class="bar"><select id="la"></select><button id="swap" aria-label="Intercambiar idiomas">⇄</button><select id="lb"></select></div>
+<textarea id="inp" placeholder="Escribe o dicta aquí…"></textarea>
+<div class="row"><button class="main" id="go">Traducir</button><button class="sec" id="clear">Borrar</button></div>
+<div class="note" id="note"></div>
+<div class="row"><button class="main" id="va"></button><button class="main" id="vb"></button></div>
+<button class="sec" id="stop" style="width:100%;margin-top:8px">⏹ Parar micrófono</button>
+<div id="log"></div>
+<div class="out empty" id="out">La traducción aparecerá aquí.</div>
+<div class="row"><button class="sec" id="copy" style="flex:1">Copiar</button><button class="sec" id="speak" style="flex:1">🔊 Escuchar</button></div>
+<label class="auto"><input type="checkbox" id="live" checked> Traducir automáticamente lo escrito</label>
+<label class="auto"><input type="checkbox" id="auto" checked> Leer la traducción en voz alta</label>
+</main>
+<script>
+var L=[["es","Español","Spanish","es-ES"],["pl","Polski","Polish","pl-PL"],["en","English","English","en-US"],["fr","Français","French","fr-FR"],["de","Deutsch","German","de-DE"],["it","Italiano","Italian","it-IT"],["pt","Português","Portuguese","pt-PT"],["ca","Català","Catalan","ca-ES"],["ro","Română","Romanian","ro-RO"],["uk","Українська","Ukrainian","uk-UA"],["ru","Русский","Russian","ru-RU"],["nl","Nederlands","Dutch","nl-NL"],["tr","Türkçe","Turkish","tr-TR"],["ar","العربية","Arabic","ar-SA"],["zh","中文","Chinese","zh-CN"],["ja","日本語","Japanese","ja-JP"],["ko","한국어","Korean","ko-KR"]];
+var $=function(i){return document.getElementById(i)};
+function find(c){for(var i=0;i<L.length;i++)if(L[i][0]===c)return L[i];return L[0]}
+var A="es",B="pl";
+try{var sv=JSON.parse(localStorage.getItem("langs")||"null");if(sv&&sv.a!==sv.b){A=find(sv.a)[0];B=find(sv.b)[0];}}catch(e){}
+[$("la"),$("lb")].forEach(function(s){L.forEach(function(l){var o=document.createElement("option");o.value=l[0];o.textContent=l[1];s.appendChild(o);});});
+function render(){
+  $("la").value=A;$("lb").value=B;
+  $("va").textContent="🎤 Hablo yo ("+find(A)[1]+")";
+  $("vb").textContent="🎤 Habla él ("+find(B)[1]+")";
+  try{localStorage.setItem("langs",JSON.stringify({a:A,b:B}));}catch(e){}
+}
+$("la").onchange=function(){var v=$("la").value;if(v===B)B=A;A=v;render();};
+$("lb").onchange=function(){var v=$("lb").value;if(v===A)A=B;B=v;render();};
+$("swap").onclick=function(){var t=A;A=B;B=t;render();};
+function note(t){$("note").textContent=t||"";}
+function errMsg(e){var c=e&&e.code;
+  if(c==="none")return"La traducción no está disponible en esta vista.";
+  if(c==="not_granted")return"Necesitas dar permiso para traducir.";
+  if(c==="rate_limited")return"Demasiadas peticiones, espera un momento.";
+  return"Error al traducir: "+((e&&(e.message||e.code))||"desconocido");}
+async function tr(text,from){
+  var s=await claude.use("sample");
+  if(!s)throw{code:"none"};
+  var p,to;
+  if(from){
+    to=from===A?B:A;
+    p="Translate this "+find(from)[2]+" text, spoken aloud, into "+find(to)[2]+", naturally. It may contain small speech-recognition errors; infer the intended meaning. Write correct spelling. Output only the translation, nothing else.\n\nText: "+text;
+    var r=await s(p,{modelTier:"quick",cache:false});
+    return{to:to,text:r.text.trim()};
+  }
+  p="The text is either "+find(A)[2]+" or "+find(B)[2]+". Detect which and translate it into the other one, naturally. Write correct spelling. Reply in exactly this format: the first line contains only the target language code, either "+A+" or "+B+"; the following lines contain the translation. Nothing else.\n\nText: "+text;
+  var r2=await s(p,{modelTier:"quick",cache:false});
+  var raw=r2.text.trim(),m=raw.match(/^\s*([a-z]{2})\s*\n([\s\S]+)$/i);
+  if(m&&(m[1].toLowerCase()===A||m[1].toLowerCase()===B))return{to:m[1].toLowerCase(),text:m[2].trim()};
+  return{to:B,text:raw};
+}
+var speaking=false,lastTo=B;
+function speakText(text,code){
+  if(!window.speechSynthesis){note("Tu dispositivo no puede leer en voz alta aquí.");return;}
+  speechSynthesis.cancel();
+  var bcp=find(code)[3],vs=speechSynthesis.getVoices()||[],v=null;
+  for(var i=0;i<vs.length;i++){if(vs[i].lang&&vs[i].lang.toLowerCase().indexOf(code)===0){v=vs[i];break;}}
+  var u=new SpeechSynthesisUtterance(text);u.lang=bcp;if(v)u.voice=v;
+  speaking=true;
+  var done=function(){setTimeout(function(){speaking=false;},700);};
+  u.onend=done;u.onerror=done;
+  speechSynthesis.speak(u);
+}
+function showOut(t){var o=$("out");o.classList.remove("empty");o.textContent=t;}
+var pending=false,lastText="";
+$("go").onclick=async function(){
+  var text=$("inp").value.trim();if(!text)return;
+  var btn=$("go");btn.disabled=true;btn.textContent="Traduciendo…";note("");
+  var wait=setTimeout(function(){note("Esperando permiso… si aparece un cuadro, pulsa Permitir.");},3000);
+  try{
+    var r=await tr(text,null);
+    showOut(r.text);lastTo=r.to;note("");
+    if($("auto").checked)speakText(r.text,r.to);
+  }catch(e){note(errMsg(e));}
+  finally{clearTimeout(wait);btn.disabled=false;btn.textContent="Traducir";
+    if(pending){pending=false;setTimeout(function(){btn.click();},50);}}
+};
+$("clear").onclick=function(){$("inp").value="";lastText="";var o=$("out");o.textContent="La traducción aparecerá aquí.";o.classList.add("empty");note("");};
+$("copy").onclick=function(){var o=$("out");if(o.classList.contains("empty"))return;try{navigator.clipboard.writeText(o.textContent);note("Copiado.");}catch(e){note("No se pudo copiar.");}};
+$("speak").onclick=function(){var o=$("out");if(!o.classList.contains("empty"))speakText(o.textContent,lastTo);};
+var seen="",stableAt=0;
+setInterval(function(){
+  if(!$("live").checked)return;
+  var t=$("inp").value.trim();
+  if(t!==seen){seen=t;stableAt=Date.now();return;}
+  if(!t){if(lastText){lastText="";var o=$("out");o.textContent="La traducción aparecerá aquí.";o.classList.add("empty");}return;}
+  if(t!==lastText&&Date.now()-stableAt>700){lastText=t;if($("go").disabled)pending=true;else $("go").click();}
+},400);
+document.addEventListener("pointerdown",function prime(){
+  document.removeEventListener("pointerdown",prime);
+  try{claude.use("sample").then(function(s){if(s)s("Reply with the single word OK.",{modelTier:"quick"}).catch(function(){});}).catch(function(){});}catch(e){}
+  try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);}}catch(e){}
+});
+var dict=null,curLang=null,switching=false,buf="",ctimer=null;
+function paint(){$("va").style.opacity=curLang===A?1:0.55;$("vb").style.opacity=curLang===B?1:0.55;}
+function addTurn(orig,t,from){
+  var d=document.createElement("div");d.className="turn";
+  var s=document.createElement("small");s.textContent=find(from)[1]+": "+orig;
+  var b=document.createElement("b");b.textContent=t;
+  d.appendChild(s);d.appendChild(b);
+  var l=$("log");l.insertBefore(d,l.firstChild);
+}
+async function turn(text,from){
+  try{
+    note("Traduciendo…");
+    var r=await tr(text,from);
+    note("");addTurn(text,r.text,from);lastTo=r.to;showOut(r.text);
+    speakText(r.text,r.to);
+  }catch(e){note(errMsg(e));}
+}
+function voiceFinal(t){
+  if(speaking||!curLang)return;
+  buf+=t;clearTimeout(ctimer);
+  var from=curLang;
+  ctimer=setTimeout(function(){var x=buf.trim();buf="";if(x)turn(x,from);},1200);
+}
+try{
+  claude.use("dictation").then(function(d){
+    dict=d;if(!d)return;
+    d.onFinal(function(e){voiceFinal(e.text);});
+    d.onPartial(function(e){if(e.text)note(e.text);});
+    d.onState(function(e){if(e.state==="idle"&&!switching){curLang=null;paint();note("");}});
+  }).catch(function(){});
+}catch(e){}
+function listen(lang){
+  if(!dict){note("El micrófono de conversación funciona abriendo la página en Chrome, no dentro de la app. Aquí puedes usar el micrófono del teclado.");$("inp").focus();return;}
+  switching=true;curLang=lang;buf="";paint();
+  try{if(window.speechSynthesis){var u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);}}catch(e){}
+  if(dict.active())dict.stop();
+  dict.start({language:lang}).then(function(){switching=false;}).catch(function(e){
+    switching=false;curLang=null;paint();
+    note(e&&e.code==="unavailable"?"El micrófono no admite ese idioma.":e&&e.code==="not_granted"?"Permiso de micrófono denegado.":"No se pudo activar el micrófono ("+((e&&e.code)||"error")+").");
+  });
+}
+$("va").onclick=function(){listen(A);};
+$("vb").onclick=function(){listen(B);};
+$("stop").onclick=function(){curLang=null;paint();if(dict&&dict.active())dict.stop();};
+render();paint();
+</script>
+</body>
+</html>
