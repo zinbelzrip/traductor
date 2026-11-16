@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traductor de voz</title>
+<style>
+:root{--bg:#faf8f5;--card:#fff;--text:#1d1b19;--muted:#6d675f;--accent:#c2410c;--accent-text:#fff;--border:#e4ded5;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#171513;--card:#211e1b;--text:#f1ede8;--muted:#a39b91;--accent:#fb923c;--accent-text:#1d1b19;--border:#38332e;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:560px;padding:20px 16px 32px}
+h1{font-size:1.3rem;margin:0 0 16px}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+select{flex:1;min-width:0;padding:11px 8px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-weight:600}
+#swap{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:1.2rem;cursor:pointer;flex:none}
+textarea,.out{width:100%;min-height:110px;padding:14px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font:inherit;font-size:1.05rem;resize:vertical}
+.out{white-space:pre-wrap;margin-top:12px}.out.empty{color:var(--muted)}
+.row{display:flex;gap:8px;margin-top:12px}
+button.main{flex:1;padding:14px 8px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-text);font-size:1rem;font-weight:700;cursor:pointer}
+button.sec{padding:14px 18px;border:1px solid var(--border);border-radius:12px;background:var(--card);color:var(--text);font-size:1rem;cursor:pointer}
+.note{min-height:1.2em;margin-top:12px;color:var(--accent);font-weight:600;font-size:.9rem}
+.turn{border:1px solid var(--border);background:var(--card);border-radius:12px;padding:10px 14px;margin-top:10px}
+.turn small{display:block;color:var(--muted)}.turn b{display:block;font-size:1.1rem;margin-top:4px}
+.auto{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted);font-size:.9rem}
+.foot{margin-top:18px;color:var(--muted);font-size:.8rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Traductor de voz</h1>
+<div class="bar"><select id="la"></select><button id="swap" aria-label="Intercambiar idiomas">⇄</button><select id="lb"></select></div>
+<textarea id="inp" placeholder="Escribe aquí…"></textarea>
+<div class="row"><button class="main" id="go">Traducir</button><button class="sec" id="clear">Borrar</button></div>
+<div class="note" id="note"></div>
+<div class="row"><button class="main" id="va"></button><button class="main" id="vb"></button></div>
+<button class="sec" id="stop" style="width:100%;margin-top:8px">⏹ Parar micrófono</button>
+<div id="log"></div>
+<div class="out empty" id="out">La traducción aparecerá aquí.</div>
+<div class="row"><button class="sec" id="copy" style="flex:1">Copiar</button><button class="sec" id="speak" style="flex:1">🔊 Escuchar</button></div>
+<label class="auto"><input type="checkbox" id="live" checked> Traducir automáticamente lo escrito</label>
+<label class="auto"><input type="checkbox" id="auto" checked> Leer la traducción en voz alta</label>
+<p class="foot">Traducción con el servicio gratuito MyMemory. Para el micrófono usa Chrome en Android o en ordenador.</p>
+</main>
+<script>
+var L=[["es","Español","es-ES","es"],["pl","Polski","pl-PL","pl"],["en","English","en-US","en"],["fr","Français","fr-FR","fr"],["de","Deutsch","de-DE","de"],["it","Italiano","it-IT","it"],["pt","Português","pt-PT","pt"],["ca","Català","ca-ES","ca"],["ro","Română","ro-RO","ro"],["uk","Українська","uk-UA","uk"],["ru","Русский","ru-RU","ru"],["nl","Nederlands","nl-NL","nl"],["tr","Türkçe","tr-TR","tr"],["ar","العربية","ar-SA","ar"],["zh","中文","zh-CN","zh-CN"],["ja","日本語","ja-JP","ja"],["ko","한국어","ko-KR","ko"]];
+var $=function(i){return document.getElementById(i)};
+function find(c){for(var i=0;i<L.length;i++)if(L[i][0]===c)return L[i];return L[0]}
+var A="es",B="pl";
+try{var sv=JSON.parse(localStorage.getItem("langs")||"null");if(sv&&sv.a!==sv.b){A=find(sv.a)[0];B=find(sv.b)[0];}}catch(e){}
+[$("la"),$("lb")].forEach(function(s){L.forEach(function(l){var o=document.createElement("option");o.value=l[0];o.textContent=l[1];s.appendChild(o);});});
+function render(){$("la").value=A;$("lb").value=B;$("va").textContent="🎤 Hablo yo ("+find(A)[1]+")";$("vb").textContent="🎤 Habla él ("+find(B)[1]+")";try{localStorage.setItem("langs",JSON.stringify({a:A,b:B}));}catch(e){}}
+$("la").onchange=function(){var v=$("la").value;if(v===B)B=A;A=v;stopRec();render();};
+$("lb").onchange=function(){var v=$("lb").value;if(v===A)A=B;B=v;stopRec();render();};
+$("swap").onclick=function(){var t=A;A=B;B=t;stopRec();render();};
+function note(t){$("note").textContent=t||"";}
+function showOut(t){var o=$("out");o.classList.remove("empty");o.textContent=t;}
+async function chunk(q,from,to){
+  var u="https://api.mymemory.translated.net/get?q="+encodeURIComponent(q)+"&langpair="+encodeURIComponent(find(from)[3]+"|"+find(to)[3]);
+  var r=await fetch(u);var j=await r.json();
+  if(!j||!j.responseData||j.responseStatus>=400&&j.responseStatus!=="200")throw new Error((j&&j.responseDetails)||"sin respuesta");
+  var t=j.responseData.translatedText||"";
+  var d=document.createElement("textarea");d.innerHTML=t;return d.value;
+}
+async function tr(text,from,to){
+  var parts=text.match(/[^.!?¿¡]+[.!?]*/g)||[text],cur="",out=[];
+  for(var i=0;i<parts.length;i++){
+    if((cur+parts[i]).length>400&&cur){out.push(cur);cur="";}
+    cur+=parts[i];
+  }
+  if(cur)out.push(cur);
+  var res=[];
+  for(var k=0;k<out.length;k++)res.push(await chunk(out[k].trim(),from,to));
+  return res.join(" ");
+}
+var speaking=false,lastTo=B;
+function speakText(text,code,cb){
+  if(!window.speechSynthesis){if(cb)cb();return;}
+  speechSynthesis.cancel();
+  var vs=speechSynthesis.getVoices()||[],v=null;
+  for(var i=0;i<vs.length;i++){if(vs[i].lang&&vs[i].lang.toLowerCase().indexOf(code)===0){v=vs[i];break;}}
+  var u=new SpeechSynthesisUtterance(text);u.lang=find(code)[2];if(v)u.voice=v;
+  speaking=true;
+  var done=function(){setTimeout(function(){speaking=false;if(cb)cb();},400);};
+  u.onend=done;u.onerror=done;
+  speechSynthesis.speak(u);
+}
+var pending=false,lastText="";
+$("go").onclick=async function(){
+  var text=$("inp").value.trim();if(!text)return;
+  var btn=$("go");btn.disabled=true;btn.textContent="Traduciendo…";note("");
+  try{
+    var t=await tr(text,A,B);showOut(t);lastTo=B;
+    if($("auto").checked)speakText(t,B);
+  }catch(e){note("Error al traducir: "+(e.message||"desconocido"));}
+  finally{btn.disabled=false;btn.textContent="Traducir";if(pending){pending=false;setTimeout(function(){btn.click();},50);}}
+};
+$("clear").onclick=function(){$("inp").value="";lastText="";var o=$("out");o.textContent="La traducción aparecerá aquí.";o.classList.add("empty");note("");};
+$("copy").onclick=function(){var o=$("out");if(o.classList.contains("empty"))return;try{navigator.clipboard.writeText(o.textContent);note("Copiado.");}catch(e){note("No se pudo copiar.");}};
+$("speak").onclick=function(){var o=$("out");if(!o.classList.contains("empty"))speakText(o.textContent,lastTo);};
+var seen="",stableAt=0;
+setInterval(function(){
+  if(!$("live").checked)return;
+  var t=$("inp").value.trim();
+  if(t!==seen){seen=t;stableAt=Date.now();return;}
+  if(!t){if(lastText){lastText="";var o=$("out");o.textContent="La traducción aparecerá aquí.";o.classList.add("empty");}return;}
+  if(t!==lastText&&Date.now()-stableAt>700){lastText=t;if($("go").disabled)pending=true;else $("go").click();}
+},400);
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,curLang=null,busy=false;
+function paint(){$("va").style.opacity=curLang===A?1:0.55;$("vb").style.opacity=curLang===B?1:0.55;}
+function addTurn(orig,t,from){
+  var d=document.createElement("div");d.className="turn";
+  var s=document.createElement("small");s.textContent=find(from)[1]+": "+orig;
+  var b=document.createElement("b");b.textContent=t;
+  d.appendChild(s);d.appendChild(b);var l=$("log");l.insertBefore(d,l.firstChild);
+}
+function startRec(){
+  if(!curLang||busy)return;
+  rec=new SR();rec.lang=find(curLang)[2];rec.continuous=false;rec.interimResults=false;
+  var got=false;
+  rec.onresult=async function(ev){
+    var text=ev.results[ev.results.length-1][0].transcript.trim();
+    if(!text){return;}
+    got=true;busy=true;note("Traduciendo…");
+    var from=curLang,to=from===A?B:A;
+    try{
+      var t=await tr(text,from,to);
+      note("");addTurn(text,t,from);lastTo=to;showOut(t);
+      speakText(t,to,function(){busy=false;startRec();});
+    }catch(e){busy=false;note("Error al traducir: "+(e.message||"desconocido"));startRec();}
+  };
+  rec.onerror=function(e){
+    if(e.error==="not-allowed"||e.error==="service-not-allowed"){note("Permiso de micrófono denegado.");curLang=null;paint();}
+    else if(e.error==="language-not-supported"){note("El micrófono no admite ese idioma.");curLang=null;paint();}
+  };
+  rec.onend=function(){if(curLang&&!busy)setTimeout(startRec,250);};
+  try{rec.start();note("Escuchando…");}catch(e){}
+}
+function stopRec(){curLang=null;busy=false;paint();if(rec){try{rec.abort();}catch(e){}rec=null;}note("");}
+function listen(lang){
+  if(!SR){note("Este navegador no tiene micrófono integrado. Abre la página en Chrome.");return;}
+  if(rec){try{rec.abort();}catch(e){}rec=null;}
+  try{var u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u);}catch(e){}
+  curLang=lang;busy=false;paint();startRec();
+}
+$("va").onclick=function(){listen(A);};
+$("vb").onclick=function(){listen(B);};
+$("stop").onclick=stopRec;
+render();paint();
+</script>
+</body>
+</html>
